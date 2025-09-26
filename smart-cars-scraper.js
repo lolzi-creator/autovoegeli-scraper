@@ -104,38 +104,59 @@ function extractMileage(rawMileage) {
 
 // Step 1: Get all available car brands from AutoScout24 (FULLY DYNAMIC like bikes)
 async function getAllCarBrands() {
-  console.log('🏷️ Getting all available car brands...');
+  console.log('🏷️ Getting all available car brands from all vehicle categories...');
   
   try {
-    const html = await fetchPage('https://www.autoscout24.ch/de/hci/v2/5571/search');
+    // Check all vehicle categories for brands
+    const categoryUrls = [
+      'https://www.autoscout24.ch/de/hci/v2/5571/search', // Passenger cars
+      'https://www.autoscout24.ch/de/hci/v2/5571/search?vehicleCategories=camper', // Campers
+      'https://www.autoscout24.ch/de/hci/v2/5571/search?vehicleCategories=utility' // Utility/Commercial
+    ];
     
-    // Extract brand options from the makeKey select dropdown (same method as bikes)
-    const brandSelectMatch = html.match(/<select[^>]*name=["']makeKey["'][^>]*>([\s\S]*?)<\/select>/);
+    const allBrands = new Set();
     
-    if (!brandSelectMatch) {
-      console.log('❌ Could not find brand selector');
-      return [];
-    }
-    
-    const brandOptions = brandSelectMatch[1].match(/<option[^>]*value=["']([^"']+)["'][^>]*>([^<]+)<\/option>/g);
-    
-    if (!brandOptions) {
-      console.log('❌ Could not find brand options');
-      return [];
-    }
-    
-    const brands = [];
-    for (const option of brandOptions) {
-      const match = option.match(/value=["']([^"']+)["'][^>]*>([^<]+)/);
-      if (match && match[1] && match[2] && match[1] !== '') {
-        brands.push({
-          key: match[1].toLowerCase(),
-          name: match[2].trim().toUpperCase()
-        });
+    for (const url of categoryUrls) {
+      console.log(`🔍 Checking brands in: ${url}`);
+      
+      try {
+        const html = await fetchPage(url);
+        
+        // Extract brand options from the makeKey select dropdown
+        const brandSelectMatch = html.match(/<select[^>]*name=["']makeKey["'][^>]*>([\s\S]*?)<\/select>/);
+        
+        if (brandSelectMatch) {
+          const brandOptions = brandSelectMatch[1].match(/<option[^>]*value=["']([^"']+)["'][^>]*>([^<]+)<\/option>/g);
+          
+          if (brandOptions) {
+            for (const option of brandOptions) {
+              const match = option.match(/value=["']([^"']+)["'][^>]*>([^<]+)/);
+              if (match && match[1] && match[2] && match[1] !== '') {
+                const brandKey = match[1].toLowerCase();
+                const brandName = match[2].trim().toUpperCase();
+                
+                // Add to set to avoid duplicates
+                allBrands.add(JSON.stringify({
+                  key: brandKey,
+                  name: brandName
+                }));
+              }
+            }
+          }
+        }
+        
+        // Add delay between requests
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`❌ Error checking brands in ${url}:`, error.message);
       }
     }
     
-    console.log(`✅ Found ${brands.length} car brands:`, brands.map(b => b.name).join(', '));
+    // Convert set back to array
+    const brands = Array.from(allBrands).map(brandStr => JSON.parse(brandStr));
+    
+    console.log(`✅ Found ${brands.length} car brands across all categories:`, brands.map(b => b.name).join(', '));
     return brands;
     
   } catch (error) {
